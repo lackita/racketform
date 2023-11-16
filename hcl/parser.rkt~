@@ -1,0 +1,67 @@
+#lang racket
+
+(require racket/hash)
+(require megaparsack megaparsack/text)
+(require data/monad data/applicative)
+
+(provide parse)
+
+(define (parse code)
+  (parse-result! (parse-string terraform/p code)))
+
+(define whitespace/p (many/p space/p))
+
+(define block-type/p
+  (or/p (string/p "resource")
+	(string/p "data")
+	(string/p "module")
+	(string/p "provider")))
+
+(define identifier/p
+  (do [ident <- (many/p (or/p letter/p digit/p (char-in/p "_-")))]
+      (pure (apply string ident))))
+
+(define tf-string/p
+  (do (char/p #\")
+      [chars <- (many/p (char-not-in/p "\""))]
+    (char/p #\")
+    (pure (apply string chars))))
+
+(define assignment/p
+  (do [identifier <- identifier/p]
+      whitespace/p
+    (char/p #\=)
+    whitespace/p
+    [value <- tf-string/p]
+    (pure (make-immutable-hash `([,identifier . ,value])))))
+
+(define block-body/p
+  (do (char/p #\{)
+      whitespace/p
+    [assignments <- (many/p (do [assignment <- assignment/p]
+				whitespace/p
+			      (pure assignment)))]
+    (char/p #\})
+    (pure (apply hash-union (make-immutable-hash) assignments))))
+
+
+(define (make-nested-hash keys value)
+  (if (empty? keys)
+      value
+      (make-immutable-hash `([,(car keys) . ,(make-nested-hash (cdr keys) value)]))))
+
+(define block/p
+  (do [type <- block-type/p]
+      whitespace/p
+    [labels <- (many/p (do [label <- tf-string/p]
+			   whitespace/p
+			 (pure label)))]
+    [body <- block-body/p]
+    (pure (make-nested-hash (cons type labels) body))))
+
+(define terraform/p
+  (do [blocks <- (many/p (do whitespace/p
+			       block/p))]
+      whitespace/p
+      eof/p
+    (pure (apply hash-union (make-immutable-hash) blocks))))

@@ -1,0 +1,18 @@
+#lang racket
+
+(provide build)
+
+(define (build)
+  (unless (directory-exists? ".racketform") (make-directory ".racketform"))
+  (for ([file (categorization-terraform (categorize (directory-list)))])
+    (copy-file file (build-path ".racketform" file) #:exists-ok? #t)))
+
+(struct categorization (terraform directories))
+
+(define (categorize files)
+  (categorization (filter terraform-file? files)
+		  (filter directory-exists? files)))
+
+(define (terraform-file? file)
+  (and (filename-extension file)
+       (bytes=? (filename-extension file) #"tf")))

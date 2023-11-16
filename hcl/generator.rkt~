@@ -1,0 +1,70 @@
+#lang racket
+
+(provide generate/tf)
+
+(define (generate/tf hcl)
+  (cond [(empty? hcl) ""]
+        [(empty? (car hcl)) "\n"]
+        [else (string-append (generate-block (car hcl)) "\n"
+                             (generate/tf (cdr hcl)))]))
+
+(struct block (type identifiers body))
+
+(define (generate-block b)
+  (block->string (list->block b)))
+
+(define (list->block list)
+  (block (car list)
+         (takef (cdr list) (negate list?))
+         (apply append (dropf list (negate list?)))))
+
+(define (block->string block)
+  (let ([multi-line? (> (length (block-body block)) 1)]
+        [empty-block? (= (length (block-body block)) 0)])
+    (string-append (value->string (block-type block)) " "
+                   (string-join (map value->string (block-identifiers block)) " ")
+                   " "
+                   (if empty-block?
+                       "{}"
+                       (string-append "{"
+                                      (if multi-line? "\n" " ")
+                                      (string-join (map (lambda (l)
+                                                          (string-append (if multi-line? "  " "") l))
+                                                        (map assignment->string (block-body block)))
+                                                   "\n")
+                                      (if multi-line? "\n" " ")
+                                      "}")))))
+
+(define (assignment->string assignment)
+  (string-join (map value->string assignment) " = "))
+
+(define (value->string value)
+  (if (string? value)
+      (string-append "\"" value "\"")
+      (symbol->string value)))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (generate/tf '([resource "foo" "bar"
+                                         ([baz "boo"])]))
+                "resource \"foo\" \"bar\" { baz = \"boo\" }\n")
+  (check-equal? (generate/tf '([resource "foo" "bar"
+                                         ([a "b"]
+                                          [c "d"])]))
+                #<<MULTILINE
+resource "foo" "bar" {
+  a = "b"
+  c = "d"
+}
+
+MULTILINE
+                )
+  (check-equal? (generate/tf '([])) "\n")
+  (check-equal? (generate/tf '([resource "foo" "bar" ()]
+                               [resource "foo" "baz" ()]))
+                #<<MULTILINE
+resource "foo" "bar" {}
+resource "foo" "baz" {}
+
+MULTILINE
+                ))

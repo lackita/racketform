@@ -1,0 +1,9 @@
+#lang racket
+
+(require racket/cmdline)
+(require "actions/all.rkt")
+
+(command-line
+ #:program "racketform"
+ #:args (action)
+ (cond [else (unknown-action action)]))
